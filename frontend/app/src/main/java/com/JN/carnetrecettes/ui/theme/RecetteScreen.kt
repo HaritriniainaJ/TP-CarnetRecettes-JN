@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,150 +18,189 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.JN.carnetrecettes.model.Recette
 import com.JN.carnetrecettes.viewmodel.RecetteViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RecetteScreen(modifier: Modifier = Modifier, vm: RecetteViewModel = viewModel()) {
+fun RecetteScreen(
+    modifier: Modifier = Modifier,
+    vm: RecetteViewModel = viewModel(),
+    onRecetteClick: (Recette) -> Unit
+) {
     val recettes by vm.recettes.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
+    val errorMessage by vm.errorMessage.collectAsState()
 
-    var nom by remember { mutableStateOf("") }
-    var ingredients by remember { mutableStateOf("") }
-    var instructions by remember { mutableStateOf("") }
-    var tempsPrepMin by remember { mutableStateOf("") }
-    var portions by remember { mutableStateOf("") }
-    var editId by remember { mutableStateOf<Int?>(null) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var recetteToEdit by remember { mutableStateOf<Recette?>(null) }
+    var recetteToDelete by remember { mutableStateOf<Recette?>(null) }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-
-        Text(
-            "Carnet de Recettes",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
+    // Dialog Ajouter
+    if (showAddDialog) {
+        RecetteFormDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = {
+                vm.addRecette(it)
+                showAddDialog = false
+            }
         )
+    }
 
-        OutlinedTextField(
-            value = nom,
-            onValueChange = { nom = it },
-            label = { Text("Nom de la recette") },
-            modifier = Modifier.fillMaxWidth()
+    // Dialog Modifier
+    if (recetteToEdit != null) {
+        RecetteFormDialog(
+            recette = recetteToEdit,
+            onDismiss = { recetteToEdit = null },
+            onConfirm = {
+                vm.updateRecette(it.id, it)
+                recetteToEdit = null
+            }
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = ingredients,
-            onValueChange = { ingredients = it },
-            label = { Text("Ingrédients") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = instructions,
-            onValueChange = { instructions = it },
-            label = { Text("Instructions") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = tempsPrepMin,
-                onValueChange = { tempsPrepMin = it },
-                label = { Text("Temps (min)") },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = portions,
-                onValueChange = { portions = it },
-                label = { Text("Portions") },
-                modifier = Modifier.weight(1f)
-            )
-        }
+    }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = {
-                val recette = Recette(
-                    id = editId ?: 0,
-                    nom = nom,
-                    ingredients = ingredients,
-                    instructions = instructions,
-                    temps_prep_min = tempsPrepMin.toIntOrNull() ?: 0,
-                    portions = portions.toIntOrNull() ?: 0
-                )
-                if (editId != null) {
-                    vm.updateRecette(editId!!, recette)
-                    editId = null
-                } else {
-                    vm.addRecette(recette)
+    // Dialog Confirmation Suppression
+    if (recetteToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { recetteToDelete = null },
+            title = { Text("Confirmer la suppression") },
+            text = { Text("Voulez-vous vraiment supprimer \"${recetteToDelete!!.nom}\" ?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.deleteRecette(recetteToDelete!!.id)
+                        recetteToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Supprimer")
                 }
-                nom = ""; ingredients = ""; instructions = ""
-                tempsPrepMin = ""; portions = ""
             },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (editId != null) "Modifier" else "Ajouter")
-        }
+            dismissButton = {
+                OutlinedButton(onClick = { recetteToDelete = null }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        LazyColumn {
-            items(recettes) { recette ->
-                RecetteItem(
-                    recette = recette,
-                    onDelete = { vm.deleteRecette(recette.id) },
-                    onEdit = {
-                        editId = recette.id
-                        nom = recette.nom
-                        ingredients = recette.ingredients
-                        instructions = recette.instructions
-                        tempsPrepMin = recette.temps_prep_min.toString()
-                        portions = recette.portions.toString()
-                    }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Carnet de Recettes") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary
                 )
+            )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, "Ajouter")
+            }
+        }
+    ) { innerPadding ->
+
+        Box(modifier = modifier.fillMaxSize().padding(innerPadding)) {
+
+            // Loading spinner
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+            // Écran vide
+            else if (recettes.isEmpty()) {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Aucune recette pour le moment",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Appuyez sur + pour ajouter une recette",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            // Liste des recettes
+            else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(recettes) { recette ->
+                        RecetteItem(
+                            recette = recette,
+                            onClick = { onRecetteClick(recette) },
+                            onEdit = { recetteToEdit = recette },
+                            onDelete = { recetteToDelete = recette }
+                        )
+                    }
+                }
+            }
+
+            // Message d'erreur
+            errorMessage?.let {
+                Snackbar(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    action = {
+                        TextButton(onClick = { vm.clearError() }) {
+                            Text("OK", color = Color.White)
+                        }
+                    }
+                ) {
+                    Text(it)
+                }
             }
         }
     }
 }
 
 @Composable
-fun RecetteItem(recette: Recette, onDelete: () -> Unit, onEdit: () -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-
+fun RecetteItem(
+    recette: Recette,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .clickable { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable { onClick() },
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     recette.nom,
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
+                    fontWeight = FontWeight.Bold
                 )
-                Row {
-                    Text(
-                        "${recette.temps_prep_min} min · ${recette.portions} parts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                    TextButton(onClick = onEdit) {
-                        Text("Éditer", color = Color.Blue)
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, "Supprimer", tint = Color.Red)
-                    }
-                }
-            }
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Ingrédients :", fontWeight = FontWeight.Bold)
-                Text(recette.ingredients, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Instructions :", fontWeight = FontWeight.Bold)
-                Text(recette.instructions, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "${recette.temps_prep_min} min · ${recette.portions} parts",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
+            Row {
+                TextButton(onClick = onEdit) {
+                    Text("Éditer", color = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, "Supprimer", tint = Color.Red)
+                }
             }
         }
     }
